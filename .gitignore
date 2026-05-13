@@ -1,3 +1,4 @@
+
 # Dependencies
 node_modules/
 .pnp
@@ -5,6 +6,7 @@ node_modules/
 
 # Next.js
 .next/
+
 out/
 build/
 
