@@ -7,16 +7,28 @@ import ProductivityDashboard from "./ProductivityDashboard";
 import AIInsightsPanel from "./AIInsightsPanel";
 import WeeklyReportCard from "./WeeklyReportCard";
 import ActivityTimeline from "./ActivityTimeline";
+import {
+  KanbanSkeleton,
+  StatsSkeleton,
+  InsightsSkeleton,
+} from "./LoadingSkeleton";
 
 export default function SmartPlanner() {
   const { add, undo, redo, setSelectedIndex } = useTasks();
+
   const [input, setInput] = useState("");
+  // ✅ Loading state — shows skeletons for 1.2s minimum so they don't flash
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (document.activeElement as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
         undo();
@@ -46,7 +58,7 @@ export default function SmartPlanner() {
         Smart Planner
       </h1>
 
-      {/* Add task input */}
+      {/* Add task input — always visible */}
       <div className="flex gap-3 flex-col sm:flex-row">
         <input
           value={input}
@@ -65,11 +77,31 @@ export default function SmartPlanner() {
         </motion.button>
       </div>
 
-      <KanbanBoard />
-      <ProductivityDashboard />
-      <AIInsightsPanel />
-      <WeeklyReportCard />
-      <ActivityTimeline />
+      {/* ✅ Show skeletons while loading, real content after */}
+      {loading ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-6"
+        >
+          <KanbanSkeleton />
+          <StatsSkeleton />
+          <InsightsSkeleton />
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          className="space-y-6"
+        >
+          <KanbanBoard />
+          <ProductivityDashboard />
+          <AIInsightsPanel />
+          <WeeklyReportCard />
+          <ActivityTimeline />
+        </motion.div>
+      )}
     </div>
   );
 }

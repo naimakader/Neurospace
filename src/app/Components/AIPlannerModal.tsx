@@ -1,59 +1,66 @@
 "use client";
-
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence }                  from "framer-motion";
-import { useTasks, Task }                           from "@/hooks/useTasks";
+import { motion, AnimatePresence } from "framer-motion";
+import { useTasks, Task } from "@/hooks/useTasks";
 import {
-  X, Zap, Clock, ChevronRight,
-  Plus, Loader2, AlertCircle, CheckCircle2,
+  X,
+  Zap,
+  Clock,
+  ChevronRight,
+  Plus,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
-
 // ─── TYPES ───────────────────────────────────────────────────────────
-
-type MoodEnergy    = "low" | "medium" | "high";
-type MoodFocus     = "light" | "balanced" | "deep";
-
+type MoodEnergy = "low" | "medium" | "high";
+type MoodFocus = "light" | "balanced" | "deep";
 type Step = {
-  title:   string;
+  title: string;
   minutes: number;
 };
 
 type ScheduleItem = {
-  time:  string;
+  time: string;
   title: string;
 };
 
 type PlanResult = {
-  priority:   string;
-  energy:     string;
-  steps:      Step[];
-  schedule:   ScheduleItem[];
+  priority: string;
+  energy: string;
+  steps: Step[];
+  schedule: ScheduleItem[];
   confidence: number;
-  fallback?:  boolean;
+  fallback?: boolean;
 };
 
 type Props = {
-  task:    Task | null;
-  open:    boolean;
+  task: Task | null;
+  open: boolean;
   onClose: () => void;
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────
 
-const ENERGY_OPTIONS: { value: MoodEnergy; label: string; emoji: string; desc: string }[] = [
-  { value: "low",    label: "Low",    emoji: "😴", desc: "Short steps, easy wins"   },
-  { value: "medium", label: "Medium", emoji: "😊", desc: "Balanced & focused"       },
-  { value: "high",   label: "High",   emoji: "⚡", desc: "Deep work, big chunks"    },
+const ENERGY_OPTIONS: {
+  value: MoodEnergy;
+  label: string;
+  emoji: string;
+  desc: string;
+}[] = [
+  { value: "low", label: "Low", emoji: "😴", desc: "Short steps, easy wins" },
+  { value: "medium", label: "Medium", emoji: "😊", desc: "Balanced & focused" },
+  { value: "high", label: "High", emoji: "⚡", desc: "Deep work, big chunks" },
 ];
 
 const FOCUS_OPTIONS: { value: MoodFocus; label: string; emoji: string }[] = [
-  { value: "light",    label: "Light",    emoji: "🌤" },
+  { value: "light", label: "Light", emoji: "🌤" },
   { value: "balanced", label: "Balanced", emoji: "⚖️" },
-  { value: "deep",     label: "Deep",     emoji: "🎯" },
+  { value: "deep", label: "Deep", emoji: "🎯" },
 ];
 
 function priorityColor(p: string) {
-  if (p === "high")   return "text-red-400 bg-red-400/10";
+  if (p === "high") return "text-red-400 bg-red-400/10";
   if (p === "medium") return "text-yellow-400 bg-yellow-400/10";
   return "text-green-400 bg-green-400/10";
 }
@@ -68,17 +75,17 @@ function durationBar(minutes: number, max: number) {
 export default function AIPlannerModal({ task, open, onClose }: Props) {
   const { tasks, add } = useTasks();
 
-  const [energy,      setEnergy]      = useState<MoodEnergy>("medium");
-  const [focus,       setFocus]       = useState<MoodFocus>("balanced");
-  const [loading,     setLoading]     = useState(false);
-  const [plan,        setPlan]        = useState<PlanResult | null>(null);
-  const [error,       setError]       = useState<string | null>(null);
-  const [addedSteps,  setAddedSteps]  = useState<Set<number>>(new Set());
-  const [allAdded,    setAllAdded]    = useState(false);
+  const [energy, setEnergy] = useState<MoodEnergy>("medium");
+  const [focus, setFocus] = useState<MoodFocus>("balanced");
+  const [loading, setLoading] = useState(false);
+  const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [addedSteps, setAddedSteps] = useState<Set<number>>(new Set());
+  const [allAdded, setAllAdded] = useState(false);
 
   // Streaming display text
-  const [streamText,  setStreamText]  = useState("");
-  const [streaming,   setStreaming]   = useState(false);
+  const [streamText, setStreamText] = useState("");
+  const [streaming, setStreaming] = useState(false);
   const streamRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset when task changes
@@ -95,7 +102,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
 
   // Cleanup stream on unmount
   useEffect(() => {
-    return () => { if (streamRef.current) clearTimeout(streamRef.current); };
+    return () => {
+      if (streamRef.current) clearTimeout(streamRef.current);
+    };
   }, []);
 
   // ── Typewriter effect ─────────────────────────────────────────────
@@ -129,14 +138,16 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
 
     try {
       const res = await fetch("/api/ai/plan", {
-        method:      "POST",
+        method: "POST",
         credentials: "include",
-        headers:     { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          task:    task.title,
-          tasks:   tasks.slice(0, 10).map((t) => ({ title: t.title, status: t.status })),
+          task: task.title,
+          tasks: tasks
+            .slice(0, 10)
+            .map((t) => ({ title: t.title, status: t.status })),
           history: [],
-          mood:    { energy, focusStyle: focus },
+          mood: { energy, focusStyle: focus },
         }),
       });
 
@@ -186,8 +197,8 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
         <motion.div
           key="modal"
           initial={{ scale: 0.92, opacity: 0, y: 24 }}
-          animate={{ scale: 1,    opacity: 1, y: 0  }}
-          exit={{   scale: 0.92, opacity: 0, y: 24  }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.92, opacity: 0, y: 24 }}
           transition={{ type: "spring", damping: 22, stiffness: 280 }}
           onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0d0f1a] border border-white/10 rounded-2xl shadow-2xl"
@@ -199,8 +210,12 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                 <Zap className="w-4 h-4 text-white" />
               </div>
               <div>
-                <div className="text-white font-semibold text-sm">AI Planner</div>
-                <div className="text-white/40 text-xs truncate max-w-[260px]">{task.title}</div>
+                <div className="text-white font-semibold text-sm">
+                  AI Planner
+                </div>
+                <div className="text-white/40 text-xs truncate max-w-[260px]">
+                  {task.title}
+                </div>
               </div>
             </div>
             <button
@@ -212,7 +227,6 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
           </div>
 
           <div className="p-6 space-y-6">
-
             {/* ── Mood Selector ── */}
             {!plan && !loading && (
               <motion.div
@@ -236,8 +250,12 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                         }`}
                       >
                         <div className="text-xl mb-1">{opt.emoji}</div>
-                        <div className="text-white text-xs font-medium">{opt.label}</div>
-                        <div className="text-white/40 text-[10px] mt-0.5">{opt.desc}</div>
+                        <div className="text-white text-xs font-medium">
+                          {opt.label}
+                        </div>
+                        <div className="text-white/40 text-[10px] mt-0.5">
+                          {opt.desc}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -259,7 +277,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                         }`}
                       >
                         <div className="text-lg">{opt.emoji}</div>
-                        <div className="text-white text-xs mt-1">{opt.label}</div>
+                        <div className="text-white text-xs mt-1">
+                          {opt.label}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -289,7 +309,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                   <Zap className="absolute inset-0 m-auto w-5 h-5 text-purple-400" />
                 </div>
                 <div className="text-center">
-                  <div className="text-white font-medium">Analysing your task...</div>
+                  <div className="text-white font-medium">
+                    Analysing your task...
+                  </div>
                   <div className="text-white/40 text-sm mt-1">
                     GPT-4o-mini is building your personalised plan
                   </div>
@@ -331,7 +353,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
               >
                 <AlertCircle className="w-10 h-10 text-red-400" />
                 <div className="text-center">
-                  <div className="text-white font-medium">Plan generation failed</div>
+                  <div className="text-white font-medium">
+                    Plan generation failed
+                  </div>
                   <div className="text-white/40 text-sm mt-1">{error}</div>
                 </div>
                 <button
@@ -353,7 +377,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
               >
                 {/* Meta row */}
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className={`text-xs px-2.5 py-1 rounded-lg font-medium capitalize ${priorityColor(plan.priority)}`}>
+                  <span
+                    className={`text-xs px-2.5 py-1 rounded-lg font-medium capitalize ${priorityColor(plan.priority)}`}
+                  >
                     {plan.priority} priority
                   </span>
                   <span className="text-xs px-2.5 py-1 rounded-lg bg-white/10 text-white/60 capitalize">
@@ -371,7 +397,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                     <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: `${Math.round(plan.confidence * 100)}%` }}
+                        animate={{
+                          width: `${Math.round(plan.confidence * 100)}%`,
+                        }}
                         transition={{ duration: 0.8, ease: "easeOut" }}
                         className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
                       />
@@ -402,16 +430,26 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                               {i + 1}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="text-white text-sm leading-snug">{step.title}</div>
+                              <div className="text-white text-sm leading-snug">
+                                {step.title}
+                              </div>
                               <div className="flex items-center gap-1.5 mt-1.5">
                                 <Clock className="w-3 h-3 text-white/30" />
-                                <span className="text-xs text-white/40">{step.minutes} min</span>
+                                <span className="text-xs text-white/40">
+                                  {step.minutes} min
+                                </span>
                                 {/* Duration bar */}
                                 <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
                                   <motion.div
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${durationBar(step.minutes, maxMinutes)}%` }}
-                                    transition={{ delay: i * 0.07 + 0.3, duration: 0.6, ease: "easeOut" }}
+                                    animate={{
+                                      width: `${durationBar(step.minutes, maxMinutes)}%`,
+                                    }}
+                                    transition={{
+                                      delay: i * 0.07 + 0.3,
+                                      duration: 0.6,
+                                      ease: "easeOut",
+                                    }}
                                     className="h-full bg-gradient-to-r from-purple-500/60 to-pink-500/60 rounded-full"
                                   />
                                 </div>
@@ -428,12 +466,17 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                                 ? "text-green-400 bg-green-400/10"
                                 : "text-white/30 hover:text-purple-400 hover:bg-purple-400/10 opacity-0 group-hover:opacity-100"
                             }`}
-                            title={addedSteps.has(i) ? "Added to board" : "Add to board"}
-                          >
-                            {addedSteps.has(i)
-                              ? <CheckCircle2 className="w-4 h-4" />
-                              : <Plus className="w-4 h-4" />
+                            title={
+                              addedSteps.has(i)
+                                ? "Added to board"
+                                : "Add to board"
                             }
+                          >
+                            {addedSteps.has(i) ? (
+                              <CheckCircle2 className="w-4 h-4" />
+                            ) : (
+                              <Plus className="w-4 h-4" />
+                            )}
                           </button>
                         </div>
                       </motion.div>
@@ -460,7 +503,9 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                         </div>
                         <div className="flex items-center gap-2 flex-1">
                           <div className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
-                          <div className="text-sm text-white/70 truncate">{item.title}</div>
+                          <div className="text-sm text-white/70 truncate">
+                            {item.title}
+                          </div>
                         </div>
                         {i < plan.schedule.length - 1 && (
                           <ChevronRight className="w-3 h-3 text-white/20 flex-shrink-0" />
@@ -484,16 +529,24 @@ export default function AIPlannerModal({ task, open, onClose }: Props) {
                     }`}
                   >
                     {allAdded ? (
-                      <><CheckCircle2 className="w-4 h-4" /> All steps added to board</>
+                      <>
+                        <CheckCircle2 className="w-4 h-4" /> All steps added to
+                        board
+                      </>
                     ) : (
-                      <><Plus className="w-4 h-4" /> Add all steps to board</>
+                      <>
+                        <Plus className="w-4 h-4" /> Add all steps to board
+                      </>
                     )}
                   </motion.button>
 
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.97 }}
-                    onClick={() => { setPlan(null); setStreamText(""); }}
+                    onClick={() => {
+                      setPlan(null);
+                      setStreamText("");
+                    }}
                     className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 text-sm transition"
                   >
                     Regenerate
