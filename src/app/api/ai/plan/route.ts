@@ -9,16 +9,19 @@ const openai = process.env.OPENAI_API_KEY
 
 function extractJSON(text: string): Record<string, unknown> | null {
   try {
-    const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : null;
+    // Strip markdown fences if present
+    const clean = text.replace(/```json|```/g, "").trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : null;
   } catch {
     return null;
   }
 }
 
 function analyzeHistory(history: any[]) {
-  if (!Array.isArray(history) || !history.length)
+  if (!Array.isArray(history) || !history.length) {
     return { average: 30, deep: 60, light: 10 };
+  }
   const total = history.reduce(
     (s, h) => s + (typeof h.minutes === "number" ? h.minutes : 0),
     0,
@@ -43,7 +46,7 @@ function adaptToMood(mood: any, l: ReturnType<typeof analyzeHistory>) {
 type Learning = ReturnType<typeof adaptToMood>;
 
 function buildSchedule(steps: { title: string; minutes: number }[]) {
-  let cursor = 9 * 60;
+  let cursor = 9 * 60; // 09:00
   return steps.map((s) => {
     const h = Math.floor(cursor / 60);
     const m = cursor % 60;
@@ -59,35 +62,56 @@ function fallbackPlan(task: string, learning: Learning, mood: any) {
   const steps = low
     ? [
         {
-          title: `Start: ${task}`,
+          title: `Start small: ${task}`,
           minutes: Math.max(5, Math.round(base * 0.5)),
         },
         {
-          title: `Continue: ${task}`,
+          title: `Build momentum`,
           minutes: Math.max(5, Math.round(base * 0.6)),
         },
       ]
-    : [
-        {
-          title: `Understand: ${task}`,
-          minutes: Math.max(5, Math.round(base * 0.6)),
-        },
-        { title: `Deep work: ${task}`, minutes: Math.max(5, base) },
-        {
-          title: `Refactor & polish`,
-          minutes: Math.max(5, Math.round(base * 0.8)),
-        },
-        {
-          title: `Finalize & review`,
-          minutes: Math.max(5, Math.round(base * 0.5)),
-        },
-      ];
+    : mood?.energy === "high"
+      ? [
+          {
+            title: `Research & scope: ${task}`,
+            minutes: Math.max(5, Math.round(base * 0.5)),
+          },
+          {
+            title: `Deep implementation`,
+            minutes: Math.max(5, Math.round(base * 1.2)),
+          },
+          {
+            title: `Quality review`,
+            minutes: Math.max(5, Math.round(base * 0.8)),
+          },
+          {
+            title: `Refine & polish`,
+            minutes: Math.max(5, Math.round(base * 0.6)),
+          },
+          {
+            title: `Final check & document`,
+            minutes: Math.max(5, Math.round(base * 0.4)),
+          },
+        ]
+      : [
+          {
+            title: `Understand: ${task}`,
+            minutes: Math.max(5, Math.round(base * 0.6)),
+          },
+          { title: `Deep work`, minutes: Math.max(5, base) },
+          {
+            title: `Review & improve`,
+            minutes: Math.max(5, Math.round(base * 0.7)),
+          },
+          { title: `Finalize`, minutes: Math.max(5, Math.round(base * 0.4)) },
+        ];
+
   return {
     priority: low ? "low" : "medium",
     energy: low ? "light" : "deep",
     steps,
     schedule: buildSchedule(steps),
-    confidence: 0.5,
+    confidence: 0.6,
     fallback: true,
     adaptive: true,
   };
@@ -113,69 +137,99 @@ export async function POST(req: Request) {
       .map((t: any) => `- ${t.title} (${t.status})`)
       .join("\n");
 
-    if (!openai) return NextResponse.json(fallbackPlan(task, learning, mood));
+    if (!openai) {
+      console.warn("[ai/plan] No OPENAI_API_KEY — using fallback plan");
+      return NextResponse.json(fallbackPlan(task, learning, mood));
+    }
 
     try {
       const chat = await openai.chat.completions.create({
-        // ✅ BUG FIX: "gpt-4.1-mini" does not exist — correct name is "gpt-4o-mini"
         model: "gpt-4o-mini",
-        temperature: 0.2,
-        max_tokens: 600,
+        temperature: 0.3,
+        max_tokens: 700,
         messages: [
           {
             role: "system",
-            content: `You are an intelligent productivity planner.
-User pattern: avg ${learning.average} min, deep ${learning.deep} min, light ${learning.light} min.
-Mood: energy=${mood?.energy ?? "medium"}, focus=${mood?.focusStyle ?? "balanced"}.
-Rules: adapt steps to energy. Low energy → 2-3 short steps. High → 4-5 deeper steps.
-Return ONLY valid JSON (no markdown fences):
-{ "priority":"high"|"medium"|"low", "energy":"deep"|"light", "steps":[{"title":string,"minutes":number}], "confidence":number }`,
+            content: `You are an expert productivity coach and AI planner.
+
+User's working pattern:
+- Average session : ${learning.average} min
+- Deep work capacity: ${learning.deep} min  
+- Light task length : ${learning.light} min
+
+User's current mood:
+- Energy    : ${mood?.energy ?? "medium"}
+- Focus style: ${mood?.focusStyle ?? "balanced"}
+
+Rules:
+- LOW energy → 2-3 short steps, max ${learning.deep} min each, gentle pacing
+- MEDIUM energy → 3-4 balanced steps
+- HIGH energy → 4-6 steps, push for depth and quality
+- Step titles must be specific and actionable (not generic like "Work on task")
+- Times must be realistic, not aspirational
+- Return ONLY valid JSON, no markdown, no explanation
+
+Required JSON format:
+{
+  "priority": "high" | "medium" | "low",
+  "energy": "deep" | "light",
+  "steps": [{ "title": "string", "minutes": number }],
+  "confidence": number
+}`,
           },
           {
             role: "user",
-            content: `Task: "${task}"\nExisting tasks:\n${summary || "None"}\nReturn ONLY JSON.`,
+            content: `Plan this task: "${task}"
+
+Other tasks on my board:
+${summary || "None"}
+
+Return ONLY the JSON object.`,
           },
         ],
       });
 
       const raw = chat.choices[0]?.message?.content ?? "";
       const parsed = extractJSON(raw);
-      const steps =
-        Array.isArray(parsed?.steps) && (parsed!.steps as any[]).length
-          ? (parsed!.steps as any[]).map((s) => ({
-              title: String(s.title || task),
-              minutes: Math.min(
-                180,
-                Math.max(5, Math.round(s.minutes || learning.average)),
-              ),
-            }))
-          : [{ title: task, minutes: learning.average }];
+
+      if (
+        !parsed ||
+        !Array.isArray(parsed.steps) ||
+        !(parsed.steps as any[]).length
+      ) {
+        console.warn(
+          "[ai/plan] GPT returned unparseable response, using fallback",
+        );
+        return NextResponse.json(fallbackPlan(task, learning, mood));
+      }
+
+      const steps = (parsed.steps as any[]).map((s) => ({
+        title: String(s.title || task),
+        minutes: Math.min(
+          180,
+          Math.max(5, Math.round(s.minutes || learning.average)),
+        ),
+      }));
 
       return NextResponse.json({
-        priority: parsed?.priority || "medium",
-        energy: parsed?.energy || "deep",
+        priority: parsed.priority ?? "medium",
+        energy: parsed.energy ?? "deep",
         steps,
         schedule: buildSchedule(steps),
         confidence:
-          typeof parsed?.confidence === "number"
+          typeof parsed.confidence === "number"
             ? Math.max(0, Math.min(1, parsed.confidence as number))
             : 0.85,
         adaptive: true,
       });
-    } catch (e: any) {
-      console.error("[ai-plan] OpenAI error:", e?.message);
+    } catch (aiErr: any) {
+      console.error("[ai/plan] OpenAI error:", aiErr?.message);
       return NextResponse.json(fallbackPlan(task, learning, mood));
     }
-  } catch (e) {
-    console.error("[ai-plan] crash:", e);
-    return NextResponse.json({
-      priority: "medium",
-      energy: "deep",
-      steps: [{ title: "Work on task", minutes: 25 }],
-      schedule: [{ time: "09:00", title: "Work on task" }],
-      confidence: 0.4,
-      fallback: true,
-      adaptive: true,
-    });
+  } catch (err: any) {
+    console.error("[ai/plan] crash:", err?.message ?? err);
+    return NextResponse.json(
+      fallbackPlan("task", { average: 25, deep: 45, light: 10 }, null),
+    );
   }
 }

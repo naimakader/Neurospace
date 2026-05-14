@@ -1,12 +1,12 @@
 "use client";
-import { motion }              from "framer-motion";
+import { motion } from "framer-motion";
 import { Cpu, Sparkles, ShieldCheck } from "lucide-react";
 import { SignInButton, useUser } from "@clerk/nextjs";
-import { useRouter }           from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export default function Hero() {
   const { isSignedIn } = useUser();
-  const router         = useRouter();
+  const router = useRouter();
 
   return (
     <section className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden bg-black text-white text-center px-6">
@@ -19,11 +19,21 @@ export default function Hero() {
         {/* LOGO */}
         <div className="flex items-center justify-center gap-4 mb-6">
           <div className="relative w-12 h-12 flex items-center justify-center">
-            <svg className="absolute w-12 h-12 animate-pulse" viewBox="0 0 100 100" fill="none">
-              <circle cx="50" cy="50" r="40" stroke="url(#g1)" strokeWidth="3" />
+            <svg
+              className="absolute w-12 h-12 animate-pulse"
+              viewBox="0 0 100 100"
+              fill="none"
+            >
+              <circle
+                cx="50"
+                cy="50"
+                r="40"
+                stroke="url(#g1)"
+                strokeWidth="3"
+              />
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="100" y2="100">
-                  <stop offset="0%"   stopColor="#ec4899" />
+                  <stop offset="0%" stopColor="#ec4899" />
                   <stop offset="100%" stopColor="#8b5cf6" />
                 </linearGradient>
               </defs>
@@ -60,9 +70,9 @@ export default function Hero() {
         {/* FEATURE ICONS */}
         <div className="grid grid-cols-3 gap-8 mb-10">
           {[
-            { Icon: Cpu,         label: "AI Power",     color: "text-cyan-400"    },
-            { Icon: Sparkles,    label: "Smooth Design", color: "text-pink-400"    },
-            { Icon: ShieldCheck, label: "Secure",        color: "text-emerald-400" },
+            { Icon: Cpu, label: "AI Power", color: "text-cyan-400" },
+            { Icon: Sparkles, label: "Smooth Design", color: "text-pink-400" },
+            { Icon: ShieldCheck, label: "Secure", color: "text-emerald-400" },
           ].map(({ Icon, label, color }) => (
             <motion.div
               key={label}
