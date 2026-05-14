@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useCallback, ReactNode } from "react";
 import {
   TasksContext,
@@ -9,6 +8,9 @@ import {
   Status,
 } from "@/hooks/useTasks";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { useToast } from "@/app/Components/Toast";
+
+// ─── HELPERS ────────────────────────────────────────────────────────
 
 function detectPriority(title: string): Priority {
   const t = title.toLowerCase();
@@ -19,13 +21,10 @@ function detectPriority(title: string): Priority {
   return "medium";
 }
 
-// ✅ FIX: archive when completed_at is BEFORE today's local midnight.
-// "24 hours ago" was wrong — a task done at 11pm would still show next morning.
-// Now the Kanban "Done" column clears cleanly at midnight every day.
 function isReadyToArchive(task: Task): boolean {
   if (task.status !== "done" || !task.completed_at) return false;
   const todayMidnight = new Date();
-  todayMidnight.setHours(0, 0, 0, 0); // local midnight — no UTC shift
+  todayMidnight.setHours(0, 0, 0, 0);
   return new Date(task.completed_at) < todayMidnight;
 }
 
@@ -63,7 +62,7 @@ async function syncToDb(restored: Task[], previous: Task[]) {
         }),
       });
     } catch (e) {
-      console.error("[syncToDb] reinsert failed:", task.id, e);
+      console.error("[syncToDb] reinsert failed:", e);
     }
   }
 
@@ -74,17 +73,21 @@ async function syncToDb(restored: Task[], previous: Task[]) {
         credentials: "include",
       });
     } catch (e) {
-      console.error("[syncToDb] delete failed:", task.id, e);
+      console.error("[syncToDb] delete failed:", e);
     }
   }
 }
+
+// ─── PROVIDER ───────────────────────────────────────────────────────
 
 export function TasksProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<ArchivedTask[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+
   const ur = useUndoRedo<Task[]>();
+  const toast = useToast();
 
   // ─── LOAD + AUTO-ARCHIVE ──────────────────────────────────────────
   useEffect(() => {
@@ -103,7 +106,6 @@ export function TasksProvider({ children }: { children: ReactNode }) {
           if (Array.isArray(tj?.data)) allTasks = tj.data;
         }
 
-        // Split: tasks ready to archive → Plan History, rest → Kanban
         const active: Task[] = [];
         const archived: ArchivedTask[] = [];
 
@@ -119,8 +121,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         setArchivedTasks(archived);
       } catch (e) {
         console.error("[TasksProvider] load error:", e);
+        toast.error("Failed to load tasks. Please refresh.");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── KEYBOARD ─────────────────────────────────────────────────────
@@ -160,16 +164,20 @@ export function TasksProvider({ children }: { children: ReactNode }) {
           }),
         });
         const { data } = await res.json();
-        if (!data) return;
+        if (!data) {
+          toast.error("Failed to add task.");
+          return;
+        }
         const next = [...tasks, data];
         setTasks(next);
         ur.register(prev);
         await persistSnapshot(next);
-      } catch (e) {
-        console.error("[add]", e);
+        toast.success("Task added.");
+      } catch {
+        toast.error("Failed to add task. Check your connection.");
       }
     },
-    [tasks, ur],
+    [tasks, ur, toast],
   );
 
   // ─── REMOVE ───────────────────────────────────────────────────────
@@ -179,19 +187,21 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       if (!task) return;
       const prev = structuredClone(tasks);
       try {
-        await fetch(`/api/tasks/${task.id}`, {
+        const res = await fetch(`/api/tasks/${task.id}`, {
           method: "DELETE",
           credentials: "include",
         });
+        if (!res.ok) throw new Error();
         const next = tasks.filter((_, i) => i !== index);
         setTasks(next);
         ur.register(prev);
         await persistSnapshot(next);
-      } catch (e) {
-        console.error("[remove]", e);
+        toast.info("Task deleted. Press Ctrl+Z to undo.");
+      } catch {
+        toast.error("Failed to delete task.");
       }
     },
-    [tasks, ur],
+    [tasks, ur, toast],
   );
 
   // ─── UPDATE ───────────────────────────────────────────────────────
@@ -205,19 +215,22 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       );
       setTasks(next);
       try {
-        await fetch(`/api/tasks/${id}`, {
+        const res = await fetch(`/api/tasks/${id}`, {
           method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: title.trim(), priority }),
         });
+        if (!res.ok) throw new Error();
         ur.register(prev);
         await persistSnapshot(next);
-      } catch (e) {
-        console.error("[update]", e);
+        toast.success("Task updated.");
+      } catch {
+        setTasks(prev); // rollback
+        toast.error("Failed to update task.");
       }
     },
-    [tasks, ur],
+    [tasks, ur, toast],
   );
 
   const updatePriority = useCallback((id: string, priority: Priority) => {
@@ -229,7 +242,8 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     setTasks((prev) =>
       [...prev].sort((a, b) => order[a.priority] - order[b.priority]),
     );
-  }, []);
+    toast.info("Tasks organised by priority.");
+  }, [toast]);
 
   // ─── DRAG & DROP ──────────────────────────────────────────────────
   const startDrag = useCallback((index: number) => setDragIndex(index), []);
@@ -253,7 +267,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       setDragIndex(null);
 
       try {
-        await fetch(`/api/tasks/${dragged.id}`, {
+        const res = await fetch(`/api/tasks/${dragged.id}`, {
           method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -262,27 +276,37 @@ export function TasksProvider({ children }: { children: ReactNode }) {
             completed_at: moved.completed_at,
           }),
         });
+        if (!res.ok) throw new Error();
         ur.register(prev);
         await persistSnapshot(arr);
-      } catch (e) {
-        console.error("[drop]", e);
+        if (newStatus === "done") toast.success("Task completed! ✓");
+      } catch {
+        setTasks(prev); // rollback
+        toast.error("Failed to move task.");
       }
     },
-    [dragIndex, tasks, ur],
+    [dragIndex, tasks, ur, toast],
   );
 
   // ─── ARCHIVE ──────────────────────────────────────────────────────
-  const restoreTask = useCallback((task: ArchivedTask) => {
-    const { archivedAt, ...base } = task;
-    setArchivedTasks((p) => p.filter((t) => t.id !== task.id));
-    setTasks((p) => [...p, { ...base, status: "todo" }]);
-  }, []);
+  const restoreTask = useCallback(
+    (task: ArchivedTask) => {
+      const { archivedAt, ...base } = task;
+      setArchivedTasks((p) => p.filter((t) => t.id !== task.id));
+      setTasks((p) => [...p, { ...base, status: "todo" }]);
+      toast.success("Task restored to board.");
+    },
+    [toast],
+  );
 
   const deleteArchivedTask = useCallback((id: string) => {
     setArchivedTasks((p) => p.filter((t) => t.id !== id));
   }, []);
 
-  const clearArchive = useCallback(() => setArchivedTasks([]), []);
+  const clearArchive = useCallback(() => {
+    setArchivedTasks([]);
+    toast.info("Archive cleared.");
+  }, [toast]);
 
   // ─── UNDO / REDO ──────────────────────────────────────────────────
   const undo = useCallback(() => {
@@ -291,8 +315,9 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       setTasks(restored);
       await persistSnapshot(restored);
       await syncToDb(restored, current);
+      toast.info("Undo successful.");
     });
-  }, [tasks, ur]);
+  }, [tasks, ur, toast]);
 
   const redo = useCallback(() => {
     const current = tasks;
@@ -300,8 +325,9 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       setTasks(restored);
       await persistSnapshot(restored);
       await syncToDb(restored, current);
+      toast.info("Redo successful.");
     });
-  }, [tasks, ur]);
+  }, [tasks, ur, toast]);
 
   return (
     <TasksContext.Provider
