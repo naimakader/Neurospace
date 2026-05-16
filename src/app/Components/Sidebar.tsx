@@ -8,13 +8,11 @@ import { Calendar, MessageSquare } from "lucide-react";
 type Item = {
   id: string;
   label: string;
-  Icon: (props: any) => JSX.Element;
+  Icon: React.ComponentType<{ className?: string }>; // ✅ replaces JSX.Element
   href: string;
   badge?: number;
 };
 
-// ✅ Removed: Your Chats, Your Notes
-// ✅ Renamed: Your Plans → Plan History, href → /plan-history
 const defaultItems: Item[] = [
   {
     id: "plan-history",
@@ -63,7 +61,7 @@ export default function Sidebar({
       }`}
       aria-label="Sidebar"
     >
-      {/* Header / collapse toggle */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         {!collapsed && (
           <div className="text-sm text-gray-300 font-semibold">NeuroSpace</div>
