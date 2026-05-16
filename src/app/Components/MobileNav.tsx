@@ -1,61 +1,40 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Calendar, BarChart2, MessageSquare } from "lucide-react";
+import { Home, Calendar } from "lucide-react";
 
-type Tab = {
-  id: string;
-  label: string;
-  href?: string;
-  onClick?: () => void;
-  Icon: any;
-};
+const TABS = [
+  { id: "home", label: "Home", href: "/dashboard", Icon: Home },
+  {
+    id: "plan-history",
+    label: "Plan History",
+    href: "/plan-history",
+    Icon: Calendar,
+  },
+];
 
-export default function MobileNav({ onOpenChat }: { onOpenChat: () => void }) {
+export default function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
 
-  // ✅ Removed: Your Chats, Your Notes
-  // ✅ Added: Plan History → /plan-history
-  const tabs: Tab[] = [
-    { id: "home", label: "Home", href: "/dashboard", Icon: Home },
-    {
-      id: "plan-history",
-      label: "History",
-      href: "/plan-history",
-      Icon: Calendar,
-    },
-    { id: "progress", label: "Progress", href: "/dashboard", Icon: BarChart2 },
-    { id: "chat", label: "Chat", onClick: onOpenChat, Icon: MessageSquare },
-  ];
-
-  function isActive(tab: Tab): boolean {
-    if (!tab.href) return false;
-    const base = tab.href.split("#")[0];
-    return pathname === base || pathname?.startsWith(base + "/");
-  }
-
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-[#0f1117]/90 backdrop-blur-xl border-t border-white/10 lg:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-[#0f1117]/95 backdrop-blur-xl border-t border-white/10 lg:hidden"
       aria-label="Mobile navigation"
     >
       <ul className="flex items-center justify-around h-14">
-        {tabs.map((tab) => {
-          const active = isActive(tab);
+        {TABS.map(({ id, label, href, Icon }) => {
+          const active = pathname === href || pathname?.startsWith(href + "/");
           return (
-            <li key={tab.id}>
+            <li key={id}>
               <button
-                onClick={() => {
-                  if (tab.onClick) tab.onClick();
-                  if (tab.href) router.push(tab.href);
-                }}
+                onClick={() => router.push(href)}
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center justify-center gap-1 text-xs transition ${
                   active ? "text-purple-400" : "text-gray-400 hover:text-white"
                 }`}
               >
-                <tab.Icon className="w-5 h-5" />
-                <span>{tab.label}</span>
+                <Icon className="w-5 h-5" />
+                <span>{label}</span>
               </button>
             </li>
           );

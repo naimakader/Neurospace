@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  // Silences the MODULE_TYPELESS_PACKAGE_JSON warning
+  experimental: {},
 };
 
 export default nextConfig;

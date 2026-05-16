@@ -1,41 +1,49 @@
 "use client";
-import { useState } from "react";
-import Sidebar from "../Components/Sidebar";
-import SmartPlanner from "../Components/SmartPlanner";
-import MobileNav from "../Components/MobileNav";
-import { UserButton } from "@clerk/nextjs";
+import { useState }         from "react";
+import Sidebar              from "../Components/Sidebar";
+import SmartPlanner         from "../Components/SmartPlanner";
+import MobileNav            from "../Components/MobileNav";
+import { UserButton,
+         useUser }          from "@clerk/nextjs";
 
 export default function Dashboard() {
-  const [chatOpen] = useState(false);
+  const { user }           = useUser();
+  const [, setChatOpen]    = useState(false);
 
-  function openChat() {
-    // wire up your chat modal/drawer here
-  }
+  const firstName = user?.firstName ?? user?.username ?? "there";
+  const hour      = new Date().getHours();
+  const greeting  =
+    hour < 12 ? "Good morning" :
+    hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <>
-      {/* Bottom nav — visible only on small screens */}
-      <MobileNav onOpenChat={openChat} />
+      <MobileNav />
 
-      {/* Sidebar — hidden on mobile, shown lg+ */}
       <div className="hidden lg:block">
-        <Sidebar onOpenChat={openChat} />
+        <Sidebar onOpenChat={() => setChatOpen(true)} />
       </div>
 
-      {/* User avatar */}
       <div className="fixed top-4 right-6 z-50">
         <UserButton afterSignOutUrl="/" />
       </div>
 
-      {/* ✅ BUG FIX: was hardcoded `ml-64` which pushes content 256 px even on
-           mobile where the sidebar is hidden. Now:
-           - mobile: no left margin (sidebar not visible)
-           - lg+:    ml-64 matches the 256 px sidebar width                     */}
       <div className="lg:ml-64 transition-all duration-300">
         <section className="min-h-screen bg-[#0f111a] text-white px-4 sm:px-8 py-20 pb-24 lg:pb-20">
           <header className="mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold">Welcome back</h2>
+            {/* ✅ Shows user's actual name from Clerk */}
+            <h2 className="text-2xl sm:text-3xl font-bold">
+              {greeting}, {firstName} 👋
+            </h2>
+            <p className="text-white/30 text-sm mt-1">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month:   "long",
+                day:     "numeric",
+              })}
+            </p>
           </header>
+
           <SmartPlanner />
         </section>
       </div>
