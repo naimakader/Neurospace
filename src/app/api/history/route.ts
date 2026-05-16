@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
+
 /* ── SAVE ──────────────────────────────────────────────────────── */
 export async function POST(req: Request) {
   try {
@@ -9,24 +10,41 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    if (!Array.isArray(body?.snapshot)) {
+
+    // ✅ ROOT FIX: Accept the new { tasks, archived } object shape.
+    // Old code only accepted Array — but TasksProvider now sends an object.
+    // That mismatch caused every save to return 400, so nothing ever persisted.
+    // Now we accept both shapes for backward compatibility.
+    const snapshot = body?.snapshot;
+
+    const isValidObject =
+      snapshot !== null &&
+      typeof snapshot === "object" &&
+      !Array.isArray(snapshot) &&
+      Array.isArray(snapshot.tasks);
+
+    const isValidArray = Array.isArray(snapshot);
+
+    if (!isValidObject && !isValidArray) {
+      console.error(
+        "[POST /api/history] invalid snapshot shape:",
+        typeof snapshot,
+      );
       return NextResponse.json(
-        { error: "snapshot must be an array" },
+        { error: "snapshot must be { tasks: [], archived: [] } or an array" },
         { status: 400 },
       );
     }
 
-    // ✅ FIX: removed updated_at — that column does not exist in task_history.
-    // Table only has: user_id (text, primary key) + snapshot (jsonb).
     const { error } = await supabaseAdmin
       .from("task_history")
-      .upsert(
-        { user_id: userId, snapshot: body.snapshot },
-        { onConflict: "user_id" },
-      );
+      .upsert({ user_id: userId, snapshot }, { onConflict: "user_id" });
 
     if (error) {
-      console.error("[POST /api/history]", JSON.stringify(error));
+      console.error(
+        "[POST /api/history] Supabase error:",
+        JSON.stringify(error),
+      );
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -53,9 +71,12 @@ export async function GET() {
       .eq("user_id", userId)
       .single();
 
-    // PGRST116 = no row yet — normal on first visit
+    // PGRST116 = no row yet — fine on first visit
     if (error && error.code !== "PGRST116") {
-      console.error("[GET /api/history]", JSON.stringify(error));
+      console.error(
+        "[GET /api/history] Supabase error:",
+        JSON.stringify(error),
+      );
     }
 
     return NextResponse.json({ snapshot: data?.snapshot ?? null });
