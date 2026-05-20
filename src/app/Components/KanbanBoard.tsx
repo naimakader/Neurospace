@@ -1,32 +1,30 @@
 "use client";
-import { useTasks, Status, Task } from "@/hooks/useTasks";
-import { useState } from "react";
+import { useTasks, Status, Task }  from "@/hooks/useTasks";
+import { useState }                from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap } from "lucide-react";
-import AIPlannerModal from "./AIPlannerModal";
+import { Zap, Timer }               from "lucide-react";
+import AIPlannerModal              from "./AIPlannerModal";
+import FocusMode, { FocusStep }    from "./FocusMode";
 
 const COLUMNS: { label: string; value: Status; color: string }[] = [
-  { label: "Todo", value: "todo", color: "text-blue-400" },
+  { label: "Todo",        value: "todo",       color: "text-blue-400"   },
   { label: "In Progress", value: "inprogress", color: "text-yellow-400" },
-  { label: "Done", value: "done", color: "text-green-400" },
+  { label: "Done",        value: "done",       color: "text-green-400"  },
 ];
 
 export default function KanbanBoard() {
   const {
-    tasks,
-    startDrag,
-    drop,
-    remove,
-    update,
-    selectedIndex,
-    setSelectedIndex,
+    tasks, startDrag, drop, remove, update,
+    selectedIndex, setSelectedIndex,
   } = useTasks();
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [overColumn, setOverColumn] = useState<Status | null>(null);
-  const [aiTask, setAiTask] = useState<Task | null>(null);
-  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [editingId,    setEditingId]    = useState<string | null>(null);
+  const [editValue,    setEditValue]    = useState("");
+  const [overColumn,   setOverColumn]   = useState<Status | null>(null);
+  const [aiTask,       setAiTask]       = useState<Task | null>(null);
+  const [aiModalOpen,  setAiModalOpen]  = useState(false);
+  const [focusTask,    setFocusTask]    = useState<Task | null>(null);
+  const [focusOpen,    setFocusOpen]    = useState(false);
 
   function startEdit(id: string, title: string) {
     setEditingId(id);
@@ -34,12 +32,14 @@ export default function KanbanBoard() {
   }
 
   function saveEdit(id: string) {
-    if (!editValue.trim()) {
-      setEditingId(null);
-      return;
-    }
+    if (!editValue.trim()) { setEditingId(null); return; }
     update(id, editValue.trim());
     setEditingId(null);
+  }
+
+  function openFocus(task: Task) {
+    setFocusTask(task);
+    setFocusOpen(true);
   }
 
   function openAI(task: Task) {
@@ -56,10 +56,7 @@ export default function KanbanBoard() {
           return (
             <div
               key={col.value}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setOverColumn(col.value);
-              }}
+              onDragOver={(e) => { e.preventDefault(); setOverColumn(col.value); }}
               onDragLeave={() => setOverColumn(null)}
               onDrop={() => {
                 const colEnd = tasks.reduce(
@@ -90,15 +87,15 @@ export default function KanbanBoard() {
               <AnimatePresence>
                 {colTasks.map((task) => {
                   const globalIndex = tasks.findIndex((t) => t.id === task.id);
-                  const isSelected = selectedIndex === globalIndex;
+                  const isSelected  = selectedIndex === globalIndex;
 
                   return (
                     <motion.div
                       key={task.id}
                       layout
                       initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0  }}
+                      exit={{   opacity: 0, scale: 0.95 }}
                       draggable
                       onDragStart={() => startDrag(globalIndex)}
                       onClick={() => setSelectedIndex(globalIndex)}
@@ -115,7 +112,7 @@ export default function KanbanBoard() {
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={() => saveEdit(task.id)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") saveEdit(task.id);
+                            if (e.key === "Enter")  saveEdit(task.id);
                             if (e.key === "Escape") setEditingId(null);
                           }}
                           onClick={(e) => e.stopPropagation()}
@@ -131,15 +128,13 @@ export default function KanbanBoard() {
                           {/* Bottom row */}
                           <div className="flex items-center justify-between gap-2">
                             {/* Priority badge */}
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                task.priority === "high"
-                                  ? "bg-red-500/20 text-red-300"
-                                  : task.priority === "medium"
-                                    ? "bg-yellow-500/20 text-yellow-300"
-                                    : "bg-green-500/20 text-green-300"
-                              }`}
-                            >
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              task.priority === "high"
+                                ? "bg-red-500/20 text-red-300"
+                                : task.priority === "medium"
+                                  ? "bg-yellow-500/20 text-yellow-300"
+                                  : "bg-green-500/20 text-green-300"
+                            }`}>
                               {task.priority}
                             </span>
 
@@ -147,10 +142,7 @@ export default function KanbanBoard() {
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               {/* ✨ AI Plan button */}
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openAI(task);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); openAI(task); }}
                                 title="Generate AI plan for this task"
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 text-[10px] font-medium transition-all"
                               >
@@ -159,20 +151,23 @@ export default function KanbanBoard() {
                               </button>
 
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEdit(task.id, task.title);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); openFocus(task); }}
+                                title="Start a focus session for this task"
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-[10px] font-medium transition-all"
+                              >
+                                <Timer className="w-3 h-3" />
+                                Focus
+                              </button>
+
+                              <button
+                                onClick={(e) => { e.stopPropagation(); startEdit(task.id, task.title); }}
                                 className="px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] transition"
                               >
                                 Edit
                               </button>
 
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  remove(globalIndex);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); remove(globalIndex); }}
                                 className="px-2 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] transition"
                               >
                                 Delete
@@ -188,9 +183,7 @@ export default function KanbanBoard() {
 
               {colTasks.length === 0 && (
                 <p className="text-xs text-white/15 text-center mt-10 select-none">
-                  {col.value === "todo"
-                    ? "Add a task above ↑"
-                    : "Drop tasks here"}
+                  {col.value === "todo" ? "Add a task above ↑" : "Drop tasks here"}
                 </p>
               )}
             </div>
@@ -198,15 +191,23 @@ export default function KanbanBoard() {
         })}
       </div>
 
+      {/* Focus Mode — single task Pomodoro */}
+      <FocusMode
+        open={focusOpen}
+        onClose={() => { setFocusOpen(false); setFocusTask(null); }}
+        steps={focusTask ? [{
+          id:      focusTask.id,
+          title:   focusTask.title,
+          minutes: 25,
+        }] : []}
+        taskId={focusTask?.id}
+      />
+
       {/* AI Planner Modal */}
       <AIPlannerModal
         task={aiTask}
         open={aiModalOpen}
-        onClose={() => {
-          setAiModalOpen(false);
-          setAiTask(null);
-        }}
+        onClose={() => { setAiModalOpen(false); setAiTask(null); }}
       />
     </>
-  );
-}
+  );}\
