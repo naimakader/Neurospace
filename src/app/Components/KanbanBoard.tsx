@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Zap, Timer } from "lucide-react";
 import AIPlannerModal from "./AIPlannerModal";
 import FocusMode, { FocusStep } from "./FocusMode";
-
 const COLUMNS: { label: string; value: Status; color: string }[] = [
   { label: "Todo", value: "todo", color: "text-blue-400" },
   { label: "In Progress", value: "inprogress", color: "text-yellow-400" },
