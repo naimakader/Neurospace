@@ -3,7 +3,7 @@ import { useState } from "react";
 import Sidebar from "../Components/Sidebar";
 import SmartPlanner from "../Components/SmartPlanner";
 import MobileNav from "../Components/MobileNav";
-import NeuroChat from "@/app/Components/Neurochat";
+import NeuroChat from "@/app/Components/NeuroChat";
 
 import { UserButton, useUser } from "@clerk/nextjs";
 
