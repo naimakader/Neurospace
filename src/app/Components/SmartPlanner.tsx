@@ -7,6 +7,7 @@ import ProductivityDashboard from "./ProductivityDashboard";
 import AIInsightsPanel from "./AIInsightsPanel";
 import WeeklyReportCard from "./WeeklyReportCard";
 import ActivityTimeline from "./ActivityTimeline";
+import PresenceAvatars from "./PresenceAvatars";
 import {
   KanbanSkeleton,
   StatsSkeleton,
@@ -15,14 +16,15 @@ import {
 
 export default function SmartPlanner() {
   const { add, undo, redo, setSelectedIndex } = useTasks();
+  // @ts-ignore — onlineUsers injected by TasksProvider via realtime
+  const { onlineUsers = [] } = useTasks() as any;
 
   const [input, setInput] = useState("");
-  // ✅ Loading state — shows skeletons for 1.2s minimum so they don't flash
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 1200);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setLoading(false), 1200);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -54,11 +56,16 @@ export default function SmartPlanner() {
 
   return (
     <div className="bg-[#0f111a] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl border border-white/5">
-      <h1 className="text-xl sm:text-2xl font-semibold text-white">
-        Smart Planner
-      </h1>
+      {/* Header row with presence avatars */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-xl sm:text-2xl font-semibold text-white">
+          Smart Planner
+        </h1>
+        {/* ✅ Shows other users online in real time */}
+        <PresenceAvatars users={onlineUsers} />
+      </div>
 
-      {/* Add task input — always visible */}
+      {/* Add task input */}
       <div className="flex gap-3 flex-col sm:flex-row">
         <input
           value={input}
@@ -77,7 +84,6 @@ export default function SmartPlanner() {
         </motion.button>
       </div>
 
-      {/* ✅ Show skeletons while loading, real content after */}
       {loading ? (
         <motion.div
           initial={{ opacity: 0 }}

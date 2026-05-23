@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, ReactNode } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   TasksContext,
   Task,
@@ -10,17 +11,9 @@ import {
 } from "@/hooks/useTasks";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { useToast } from "@/app/Components/Toast";
+import { useRealtimeBoard, PresenceUser } from "@/hooks/useRealtimeBoard";
 
-// ─── TYPES ───────────────────────────────────────────────────────────
-
-// ✅ The ONE snapshot shape used everywhere — API + Provider must agree exactly.
-// Previously the API expected an array but Provider sent an object → 400 on every save.
-type Snapshot = {
-  tasks: Task[];
-  archived: ArchivedTask[];
-};
-
-// ─── HELPERS ─────────────────────────────────────────────────────────
+// ─── HELPERS ────────────────────────────────────────────────────────
 
 function detectPriority(title: string): Priority {
   const t = title.toLowerCase();
@@ -38,35 +31,24 @@ function isReadyToArchive(task: Task): boolean {
   return new Date(task.completed_at) < midnight;
 }
 
-// Save BOTH active tasks AND archived to the snapshot so:
-// - Streak data survives refresh (archived tasks = past completions)
-// - Deleted tasks stay deleted after undo/redo refresh
-// - Column positions are preserved
 async function save(tasks: Task[], archived: ArchivedTask[]) {
   try {
-    const payload: Snapshot = { tasks, archived };
     const res = await fetch("/api/history", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshot: payload }),
+      body: JSON.stringify({ snapshot: { tasks, archived } }),
     });
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("[save] failed:", res.status, text);
-    }
+    if (!res.ok) console.error("[save] failed:", res.status);
   } catch (e) {
-    console.error("[save] network error:", e);
+    console.error("[save]", e);
   }
 }
 
-// Re-insert tasks that undo brought back into Supabase
-// Delete tasks that redo removed from Supabase
 async function syncToDb(restored: Task[], previous: Task[]) {
   const prevIds = new Set(previous.map((t) => t.id));
   const restoredIds = new Set(restored.map((t) => t.id));
 
-  // Tasks in restored but not in previous → deleted, need re-insert
   for (const task of restored.filter((t) => !prevIds.has(t.id))) {
     try {
       await fetch("/api/tasks", {
@@ -83,11 +65,10 @@ async function syncToDb(restored: Task[], previous: Task[]) {
         }),
       });
     } catch (e) {
-      console.error("[syncToDb] reinsert failed:", e);
+      console.error("[syncToDb] reinsert:", e);
     }
   }
 
-  // Tasks in previous but not in restored → redo of delete, remove them
   for (const task of previous.filter((t) => !restoredIds.has(t.id))) {
     try {
       await fetch(`/api/tasks/${task.id}`, {
@@ -95,7 +76,7 @@ async function syncToDb(restored: Task[], previous: Task[]) {
         credentials: "include",
       });
     } catch (e) {
-      console.error("[syncToDb] delete failed:", e);
+      console.error("[syncToDb] delete:", e);
     }
   }
 }
@@ -103,15 +84,45 @@ async function syncToDb(restored: Task[], previous: Task[]) {
 // ─── PROVIDER ────────────────────────────────────────────────────────
 
 export function TasksProvider({ children }: { children: ReactNode }) {
+  const { user } = useUser();
+  const toast = useToast();
+  const ur = useUndoRedo<Task[]>();
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<ArchivedTask[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
 
-  const ur = useUndoRedo<Task[]>();
-  const toast = useToast();
+  // ── REALTIME ──────────────────────────────────────────────────────
+  const {
+    broadcastTaskAdded,
+    broadcastTaskUpdated,
+    broadcastTaskDeleted,
+    broadcastTasksReordered,
+  } = useRealtimeBoard({
+    boardId: user?.id ?? "anonymous",
+    currentUserId: user?.id ?? "anonymous",
+    currentUserName: user?.firstName ?? user?.username ?? "User",
+    tasks,
+    onPresenceChange: setOnlineUsers,
+    onTaskAdded: (task) => {
+      setTasks((prev) =>
+        prev.some((t) => t.id === task.id) ? prev : [...prev, task],
+      );
+    },
+    onTaskUpdated: (task) => {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+    },
+    onTaskDeleted: (taskId) => {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    },
+    onTasksReordered: (newTasks) => {
+      setTasks(newTasks);
+    },
+  });
 
-  // ─── LOAD ──────────────────────────────────────────────────────────
+  // ── LOAD ──────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -120,75 +131,61 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         const snap = hj?.snapshot;
 
         if (snap) {
-          // ✅ New format: { tasks: [], archived: [] }
           if (snap.tasks && Array.isArray(snap.tasks)) {
             const active: Task[] = [];
             const archived: ArchivedTask[] = Array.isArray(snap.archived)
               ? [...snap.archived]
               : [];
-
-            // Re-check archive eligibility on load (midnight may have passed)
             snap.tasks.forEach((task: Task) => {
               if (isReadyToArchive(task)) {
-                // Move to archive if not already there
-                const alreadyArchived = archived.some((a) => a.id === task.id);
-                if (!alreadyArchived) {
+                if (!archived.some((a) => a.id === task.id)) {
                   archived.push({ ...task, archivedAt: task.completed_at! });
                 }
               } else {
                 active.push(task);
               }
             });
-
             setTasks(active);
             setArchivedTasks(archived);
             return;
           }
-
-          // ✅ Old format: plain array — migrate on the fly
           if (Array.isArray(snap)) {
             const active: Task[] = [];
             const archived: ArchivedTask[] = [];
             snap.forEach((task: Task) => {
-              if (isReadyToArchive(task)) {
+              if (isReadyToArchive(task))
                 archived.push({ ...task, archivedAt: task.completed_at! });
-              } else {
-                active.push(task);
-              }
+              else active.push(task);
             });
             setTasks(active);
             setArchivedTasks(archived);
-            // Migrate: save in new format immediately
             await save(active, archived);
             return;
           }
         }
 
-        // Fallback: load from tasks table
         const tr = await fetch("/api/tasks", { credentials: "include" });
         const tj = await tr.json();
         if (Array.isArray(tj?.data)) {
           const active: Task[] = [];
           const archived: ArchivedTask[] = [];
           tj.data.forEach((task: Task) => {
-            if (isReadyToArchive(task)) {
+            if (isReadyToArchive(task))
               archived.push({ ...task, archivedAt: task.completed_at! });
-            } else {
-              active.push(task);
-            }
+            else active.push(task);
           });
           setTasks(active);
           setArchivedTasks(archived);
         }
       } catch (e) {
-        console.error("[TasksProvider] load error:", e);
+        console.error("[TasksProvider] load:", e);
         toast.error("Failed to load tasks. Please refresh.");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── KEYBOARD ──────────────────────────────────────────────────────
+  // ── KEYBOARD ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -208,7 +205,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [tasks]);
 
-  // ─── ADD ───────────────────────────────────────────────────────────
+  // ── ADD ───────────────────────────────────────────────────────────
   const add = useCallback(
     async (title: string) => {
       if (!title.trim()) return;
@@ -233,15 +230,16 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         setTasks(next);
         ur.register(prev);
         await save(next, archivedTasks);
+        broadcastTaskAdded(data); // ✅ Realtime
         toast.success("Task added.");
       } catch {
-        toast.error("Failed to add task. Check your connection.");
+        toast.error("Failed to add task.");
       }
     },
-    [tasks, archivedTasks, ur, toast],
+    [tasks, archivedTasks, ur, toast, broadcastTaskAdded],
   );
 
-  // ─── REMOVE ────────────────────────────────────────────────────────
+  // ── REMOVE ────────────────────────────────────────────────────────
   const remove = useCallback(
     async (index: number) => {
       const task = tasks[index];
@@ -252,20 +250,21 @@ export function TasksProvider({ children }: { children: ReactNode }) {
           method: "DELETE",
           credentials: "include",
         });
-        if (!res.ok) throw new Error("Delete failed");
+        if (!res.ok) throw new Error();
         const next = tasks.filter((_, i) => i !== index);
         setTasks(next);
         ur.register(prev);
         await save(next, archivedTasks);
+        broadcastTaskDeleted(task.id); // ✅ Realtime
         toast.info("Task deleted. Press Ctrl+Z to undo.");
       } catch {
         toast.error("Failed to delete task.");
       }
     },
-    [tasks, archivedTasks, ur, toast],
+    [tasks, archivedTasks, ur, toast, broadcastTaskDeleted],
   );
 
-  // ─── UPDATE ────────────────────────────────────────────────────────
+  // ── UPDATE ────────────────────────────────────────────────────────
   const update = useCallback(
     async (id: string, title: string) => {
       if (!title.trim()) return;
@@ -282,16 +281,18 @@ export function TasksProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: title.trim(), priority }),
         });
-        if (!res.ok) throw new Error("Update failed");
+        if (!res.ok) throw new Error();
         ur.register(prev);
         await save(next, archivedTasks);
+        const updated = next.find((t) => t.id === id);
+        if (updated) broadcastTaskUpdated(updated); // ✅ Realtime
         toast.success("Task updated.");
       } catch {
-        setTasks(prev); // rollback optimistic update
+        setTasks(prev);
         toast.error("Failed to update task.");
       }
     },
-    [tasks, archivedTasks, ur, toast],
+    [tasks, archivedTasks, ur, toast, broadcastTaskUpdated],
   );
 
   const updatePriority = useCallback((id: string, priority: Priority) => {
@@ -306,7 +307,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     toast.info("Tasks organised by priority.");
   }, [toast]);
 
-  // ─── DRAG & DROP ───────────────────────────────────────────────────
+  // ── DRAG & DROP ───────────────────────────────────────────────────
   const startDrag = useCallback((index: number) => setDragIndex(index), []);
 
   const drop = useCallback(
@@ -337,19 +338,20 @@ export function TasksProvider({ children }: { children: ReactNode }) {
             completed_at: moved.completed_at,
           }),
         });
-        if (!res.ok) throw new Error("Move failed");
+        if (!res.ok) throw new Error();
         ur.register(prev);
         await save(arr, archivedTasks);
+        broadcastTasksReordered(arr); // ✅ Realtime
         if (newStatus === "done") toast.success("Task completed! 🔥");
       } catch {
-        setTasks(prev); // rollback
+        setTasks(prev);
         toast.error("Failed to move task.");
       }
     },
-    [dragIndex, tasks, archivedTasks, ur, toast],
+    [dragIndex, tasks, archivedTasks, ur, toast, broadcastTasksReordered],
   );
 
-  // ─── ARCHIVE ───────────────────────────────────────────────────────
+  // ── ARCHIVE ───────────────────────────────────────────────────────
   const restoreTask = useCallback(
     (task: ArchivedTask) => {
       const { archivedAt, ...base } = task;
@@ -378,29 +380,30 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     toast.info("Archive cleared.");
   }, [tasks, toast]);
 
-  // ─── UNDO ──────────────────────────────────────────────────────────
+  // ── UNDO / REDO ───────────────────────────────────────────────────
   const undo = useCallback(() => {
     const current = tasks;
     ur.undo(tasks, async (restored) => {
       setTasks(restored);
       await save(restored, archivedTasks);
       await syncToDb(restored, current);
+      broadcastTasksReordered(restored);
       toast.info("Undo successful.");
     });
-  }, [tasks, archivedTasks, ur, toast]);
+  }, [tasks, archivedTasks, ur, toast, broadcastTasksReordered]);
 
-  // ─── REDO ──────────────────────────────────────────────────────────
   const redo = useCallback(() => {
     const current = tasks;
     ur.redo(tasks, async (restored) => {
       setTasks(restored);
       await save(restored, archivedTasks);
       await syncToDb(restored, current);
+      broadcastTasksReordered(restored);
       toast.info("Redo successful.");
     });
-  }, [tasks, archivedTasks, ur, toast]);
+  }, [tasks, archivedTasks, ur, toast, broadcastTasksReordered]);
 
-  // ─── CONTEXT ───────────────────────────────────────────────────────
+  // ── CONTEXT ───────────────────────────────────────────────────────
   return (
     <TasksContext.Provider
       value={{
@@ -422,6 +425,8 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         drop,
         undo,
         redo,
+        // @ts-ignore — extend context with realtime data for dashboard
+        onlineUsers,
       }}
     >
       {children}
