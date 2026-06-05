@@ -7,7 +7,6 @@ import ProductivityDashboard from "./ProductivityDashboard";
 import AIInsightsPanel from "./AIInsightsPanel";
 import WeeklyReportCard from "./WeeklyReportCard";
 import ActivityTimeline from "./ActivityTimeline";
-import PresenceAvatars from "./PresenceAvatars";
 import {
   KanbanSkeleton,
   StatsSkeleton,
@@ -16,9 +15,6 @@ import {
 
 export default function SmartPlanner() {
   const { add, undo, redo, setSelectedIndex } = useTasks();
-  // @ts-ignore — onlineUsers injected by TasksProvider via realtime
-  const { onlineUsers = [] } = useTasks() as any;
-
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -56,16 +52,10 @@ export default function SmartPlanner() {
 
   return (
     <div className="bg-[#0f111a] rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl border border-white/5">
-      {/* Header row with presence avatars */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl sm:text-2xl font-semibold text-white">
-          Smart Planner
-        </h1>
-        {/* ✅ Shows other users online in real time */}
-        <PresenceAvatars users={onlineUsers} />
-      </div>
+      <h1 className="text-xl sm:text-2xl font-semibold text-white">
+        Smart Planner
+      </h1>
 
-      {/* Add task input */}
       <div className="flex gap-3 flex-col sm:flex-row">
         <input
           value={input}

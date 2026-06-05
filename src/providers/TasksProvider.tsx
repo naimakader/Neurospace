@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, ReactNode } from "react";
-import { useUser } from "@clerk/nextjs";
 import {
   TasksContext,
   Task,
@@ -11,7 +10,6 @@ import {
 } from "@/hooks/useTasks";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { useToast } from "@/app/Components/Toast";
-import { useRealtimeBoard, PresenceUser } from "@/hooks/useRealtimeBoard";
 
 // ─── HELPERS ────────────────────────────────────────────────────────
 
@@ -48,7 +46,6 @@ async function save(tasks: Task[], archived: ArchivedTask[]) {
 async function syncToDb(restored: Task[], previous: Task[]) {
   const prevIds = new Set(previous.map((t) => t.id));
   const restoredIds = new Set(restored.map((t) => t.id));
-
   for (const task of restored.filter((t) => !prevIds.has(t.id))) {
     try {
       await fetch("/api/tasks", {
@@ -68,7 +65,6 @@ async function syncToDb(restored: Task[], previous: Task[]) {
       console.error("[syncToDb] reinsert:", e);
     }
   }
-
   for (const task of previous.filter((t) => !restoredIds.has(t.id))) {
     try {
       await fetch(`/api/tasks/${task.id}`, {
@@ -84,7 +80,6 @@ async function syncToDb(restored: Task[], previous: Task[]) {
 // ─── PROVIDER ────────────────────────────────────────────────────────
 
 export function TasksProvider({ children }: { children: ReactNode }) {
-  const { user } = useUser();
   const toast = useToast();
   const ur = useUndoRedo<Task[]>();
 
@@ -92,37 +87,8 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const [archivedTasks, setArchivedTasks] = useState<ArchivedTask[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
 
-  // ── REALTIME ──────────────────────────────────────────────────────
-  const {
-    broadcastTaskAdded,
-    broadcastTaskUpdated,
-    broadcastTaskDeleted,
-    broadcastTasksReordered,
-  } = useRealtimeBoard({
-    boardId: user?.id ?? "anonymous",
-    currentUserId: user?.id ?? "anonymous",
-    currentUserName: user?.firstName ?? user?.username ?? "User",
-    tasks,
-    onPresenceChange: setOnlineUsers,
-    onTaskAdded: (task) => {
-      setTasks((prev) =>
-        prev.some((t) => t.id === task.id) ? prev : [...prev, task],
-      );
-    },
-    onTaskUpdated: (task) => {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
-    },
-    onTaskDeleted: (taskId) => {
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    },
-    onTasksReordered: (newTasks) => {
-      setTasks(newTasks);
-    },
-  });
-
-  // ── LOAD ──────────────────────────────────────────────────────────
+  // ─── LOAD ─────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -136,13 +102,12 @@ export function TasksProvider({ children }: { children: ReactNode }) {
             const archived: ArchivedTask[] = Array.isArray(snap.archived)
               ? [...snap.archived]
               : [];
-            snap.tasks.forEach((task: Task) => {
-              if (isReadyToArchive(task)) {
-                if (!archived.some((a) => a.id === task.id)) {
-                  archived.push({ ...task, archivedAt: task.completed_at! });
-                }
+            snap.tasks.forEach((t: Task) => {
+              if (isReadyToArchive(t)) {
+                if (!archived.some((a) => a.id === t.id))
+                  archived.push({ ...t, archivedAt: t.completed_at! });
               } else {
-                active.push(task);
+                active.push(t);
               }
             });
             setTasks(active);
@@ -152,10 +117,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
           if (Array.isArray(snap)) {
             const active: Task[] = [];
             const archived: ArchivedTask[] = [];
-            snap.forEach((task: Task) => {
-              if (isReadyToArchive(task))
-                archived.push({ ...task, archivedAt: task.completed_at! });
-              else active.push(task);
+            snap.forEach((t: Task) => {
+              if (isReadyToArchive(t))
+                archived.push({ ...t, archivedAt: t.completed_at! });
+              else active.push(t);
             });
             setTasks(active);
             setArchivedTasks(archived);
@@ -169,10 +134,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         if (Array.isArray(tj?.data)) {
           const active: Task[] = [];
           const archived: ArchivedTask[] = [];
-          tj.data.forEach((task: Task) => {
-            if (isReadyToArchive(task))
-              archived.push({ ...task, archivedAt: task.completed_at! });
-            else active.push(task);
+          tj.data.forEach((t: Task) => {
+            if (isReadyToArchive(t))
+              archived.push({ ...t, archivedAt: t.completed_at! });
+            else active.push(t);
           });
           setTasks(active);
           setArchivedTasks(archived);
@@ -185,7 +150,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── KEYBOARD ──────────────────────────────────────────────────────
+  // ─── KEYBOARD ─────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -205,7 +170,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [tasks]);
 
-  // ── ADD ───────────────────────────────────────────────────────────
+  // ─── ADD ──────────────────────────────────────────────────────────
   const add = useCallback(
     async (title: string) => {
       if (!title.trim()) return;
@@ -230,16 +195,15 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         setTasks(next);
         ur.register(prev);
         await save(next, archivedTasks);
-        broadcastTaskAdded(data); // ✅ Realtime
         toast.success("Task added.");
       } catch {
         toast.error("Failed to add task.");
       }
     },
-    [tasks, archivedTasks, ur, toast, broadcastTaskAdded],
+    [tasks, archivedTasks, ur, toast],
   );
 
-  // ── REMOVE ────────────────────────────────────────────────────────
+  // ─── REMOVE ───────────────────────────────────────────────────────
   const remove = useCallback(
     async (index: number) => {
       const task = tasks[index];
@@ -255,16 +219,15 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         setTasks(next);
         ur.register(prev);
         await save(next, archivedTasks);
-        broadcastTaskDeleted(task.id); // ✅ Realtime
         toast.info("Task deleted. Press Ctrl+Z to undo.");
       } catch {
         toast.error("Failed to delete task.");
       }
     },
-    [tasks, archivedTasks, ur, toast, broadcastTaskDeleted],
+    [tasks, archivedTasks, ur, toast],
   );
 
-  // ── UPDATE ────────────────────────────────────────────────────────
+  // ─── UPDATE ───────────────────────────────────────────────────────
   const update = useCallback(
     async (id: string, title: string) => {
       if (!title.trim()) return;
@@ -284,15 +247,13 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         if (!res.ok) throw new Error();
         ur.register(prev);
         await save(next, archivedTasks);
-        const updated = next.find((t) => t.id === id);
-        if (updated) broadcastTaskUpdated(updated); // ✅ Realtime
         toast.success("Task updated.");
       } catch {
         setTasks(prev);
         toast.error("Failed to update task.");
       }
     },
-    [tasks, archivedTasks, ur, toast, broadcastTaskUpdated],
+    [tasks, archivedTasks, ur, toast],
   );
 
   const updatePriority = useCallback((id: string, priority: Priority) => {
@@ -307,7 +268,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     toast.info("Tasks organised by priority.");
   }, [toast]);
 
-  // ── DRAG & DROP ───────────────────────────────────────────────────
+  // ─── DRAG & DROP ──────────────────────────────────────────────────
   const startDrag = useCallback((index: number) => setDragIndex(index), []);
 
   const drop = useCallback(
@@ -317,7 +278,6 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       const arr = [...tasks];
       const dragged = arr[dragIndex];
       if (!dragged) return;
-
       arr.splice(dragIndex, 1);
       const moved: Task = {
         ...dragged,
@@ -327,7 +287,6 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       arr.splice(Math.min(targetIndex, arr.length), 0, moved);
       setTasks(arr);
       setDragIndex(null);
-
       try {
         const res = await fetch(`/api/tasks/${dragged.id}`, {
           method: "PATCH",
@@ -341,17 +300,16 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         if (!res.ok) throw new Error();
         ur.register(prev);
         await save(arr, archivedTasks);
-        broadcastTasksReordered(arr); // ✅ Realtime
         if (newStatus === "done") toast.success("Task completed! 🔥");
       } catch {
         setTasks(prev);
         toast.error("Failed to move task.");
       }
     },
-    [dragIndex, tasks, archivedTasks, ur, toast, broadcastTasksReordered],
+    [dragIndex, tasks, archivedTasks, ur, toast],
   );
 
-  // ── ARCHIVE ───────────────────────────────────────────────────────
+  // ─── ARCHIVE ──────────────────────────────────────────────────────
   const restoreTask = useCallback(
     (task: ArchivedTask) => {
       const { archivedAt, ...base } = task;
@@ -380,17 +338,16 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     toast.info("Archive cleared.");
   }, [tasks, toast]);
 
-  // ── UNDO / REDO ───────────────────────────────────────────────────
+  // ─── UNDO / REDO ──────────────────────────────────────────────────
   const undo = useCallback(() => {
     const current = tasks;
     ur.undo(tasks, async (restored) => {
       setTasks(restored);
       await save(restored, archivedTasks);
       await syncToDb(restored, current);
-      broadcastTasksReordered(restored);
       toast.info("Undo successful.");
     });
-  }, [tasks, archivedTasks, ur, toast, broadcastTasksReordered]);
+  }, [tasks, archivedTasks, ur, toast]);
 
   const redo = useCallback(() => {
     const current = tasks;
@@ -398,12 +355,11 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       setTasks(restored);
       await save(restored, archivedTasks);
       await syncToDb(restored, current);
-      broadcastTasksReordered(restored);
       toast.info("Redo successful.");
     });
-  }, [tasks, archivedTasks, ur, toast, broadcastTasksReordered]);
+  }, [tasks, archivedTasks, ur, toast]);
 
-  // ── CONTEXT ───────────────────────────────────────────────────────
+  // ─── CONTEXT ──────────────────────────────────────────────────────
   return (
     <TasksContext.Provider
       value={{
@@ -425,8 +381,6 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         drop,
         undo,
         redo,
-        // @ts-ignore — extend context with realtime data for dashboard
-        onlineUsers,
       }}
     >
       {children}
