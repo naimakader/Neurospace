@@ -7,6 +7,7 @@ import ProductivityDashboard from "./ProductivityDashboard";
 import AIInsightsPanel from "./AIInsightsPanel";
 import WeeklyReportCard from "./WeeklyReportCard";
 import ActivityTimeline from "./ActivityTimeline";
+import ProductivityIntelligence from "./Productivityintelligence";
 import {
   KanbanSkeleton,
   StatsSkeleton,
@@ -92,6 +93,7 @@ export default function SmartPlanner() {
           className="space-y-6"
         >
           <KanbanBoard />
+          <ProductivityIntelligence />
           <ProductivityDashboard />
           <AIInsightsPanel />
           <WeeklyReportCard />
